@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EduMicro - Système d'Inscription</title>
+    
+    <!-- CDN = bibliotheques chargees depuis Internet sans installation locale -->
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        app: {
+                            bg: '#2d3250',
+                            surface: '#424769',
+                            muted: '#676f9d',
+                            accent: '#f9b17a',
+                            text: '#ffffff',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Raleway', 'sans-serif'],
+                    }
+                }
+            }
+        };
+    </script>
+    
+    <!-- React & ReactDOM CDN -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel pour JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Raleway:wght@400;600;700&display=swap');
+
+        body {
+            font-family: 'Raleway', sans-serif;
+            background-color: #2d3250;
+            background-image: radial-gradient(ellipse 80% 50% at 100% 0%, rgba(249, 177, 122, 0.12), transparent);
+            color: #ffffff;
+            min-height: 100vh;
+        }
+
+        .app-card {
+            background-color: #424769;
+            border: 1px solid rgba(103, 111, 157, 0.35);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+        }
+
+        .app-input {
+            width: 100%;
+            padding: 0.625rem 1rem;
+            background-color: #2d3250;
+            border: 1px solid #676f9d;
+            border-radius: 0.5rem;
+            color: #ffffff;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .app-input::placeholder {
+            color: #676f9d;
+        }
+
+        .app-input:focus {
+            outline: none;
+            border-color: #f9b17a;
+            box-shadow: 0 0 0 2px rgba(249, 177, 122, 0.35);
+        }
+
+        .app-btn-primary {
+            background-color: #f9b17a;
+            color: #2d3250;
+            font-weight: 600;
+            transition: filter 0.2s, transform 0.2s;
+        }
+
+        .app-btn-primary:hover:not(:disabled) {
+            filter: brightness(1.08);
+        }
+
+        .app-btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .card-hover:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+            transition: all 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        /* Barres de défilement — Firefox */
+        html {
+            scrollbar-width: thin;
+            scrollbar-color: #f9b17a #424769;
+        }
+
+        .app-scroll {
+            scrollbar-width: thin;
+            scrollbar-color: #f9b17a #424769;
+        }
+
+        /* Barres de défilement — Chrome, Edge, Safari */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #424769;
+            border-radius: 6px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #676f9d;
+            border-radius: 6px;
+            border: 2px solid #424769;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #f9b17a;
+        }
+
+        ::-webkit-scrollbar-corner {
+            background: #2d3250;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // API Configuration
+        const API_BASE_URL = 'http://localhost:8080/api';
+
+        // Composant principal
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('dashboard');
+            const [students, setStudents] = useState([]);
+            const [courses, setCourses] = useState([]);
+            const [enrollments, setEnrollments] = useState([]);
+            const [totalEnrollments, setTotalEnrollments] = useState(0);
+            const [cnieInput, setCnieInput] = useState('');
+            const [validatedStudent, setValidatedStudent] = useState(null);
+            const [selectedCourseId, setSelectedCourseId] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [validatingCnie, setValidatingCnie] = useState(false);
+            const [loadingEnrollments, setLoadingEnrollments] = useState(false);
+            const [message, setMessage] = useState({ text: '', type: '' });
+            const [newStudent, setNewStudent] = useState({ cnie: '', firstName: '', lastName: '', email: '' });
+            const [newCourse, setNewCourse] = useState({ title: '', description: '', credits: '' });
+
+            // Charge les donnees principales au demarrage du front.
+            useEffect(() => {
+                loadStudents();
+                loadCourses();
+                loadTotalEnrollments();
+            }, []);
+
+            // Recupere le nombre total d'inscriptions pour le dashboard.
+            const loadTotalEnrollments = async () => {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/enrollments/count`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        const count = typeof data === 'number' ? data : (data?.total ?? 0);
+                        setTotalEnrollments(Number(count) || 0);
+                    }
+                } catch (error) {
+                    setTotalEnrollments(0);
+                }
+            };
+
+            // Extrait les noms des cours deja suivis par l'etudiant.
+            const enrolledCourseNames = enrollments.map(e => e.courseName);
+
+            // Garde seulement les cours auxquels l'etudiant n'est pas encore inscrit.
+            const availableCourses = courses.filter(
+                c => !enrolledCourseNames.includes(c.title)
+            );
+
+            // Charge la liste de tous les etudiants.
+            const loadStudents = async () => {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/students`);
+                    if (!response.ok) {
+                        setStudents([]);
+                        showMessage('Erreur chargement étudiants (vérifiez student-service sur 8081)', 'error');
+                        return;
+                    }
+                    const data = await response.json();
+                    setStudents(Array.isArray(data) ? data : []);
+                } catch (error) {
+                    setStudents([]);
+                    showMessage('Erreur chargement étudiants', 'error');
+                }
+            };
+
+            // Charge la liste de tous les cours.
+            const loadCourses = async () => {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/courses`);
+                    if (!response.ok) {
+                        setCourses([]);
+                        showMessage('Erreur chargement cours', 'error');
+                        return;
+                    }
+                    const data = await response.json();
+                    setCourses(Array.isArray(data) ? data : []);
+                } catch (error) {
+                    setCourses([]);
+                    showMessage('Erreur chargement cours', 'error');
+                }
+            };
+
+            // Charge les inscriptions de l'etudiant a partir de son CNIE.
+            const loadEnrollments = async (cnie) => {
+                setLoadingEnrollments(true);
+                try {
+                    const response = await fetch(`${API_BASE_URL}/enrollments/student/${encodeURIComponent(cnie)}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        setEnrollments(Array.isArray(data) ? data : []);
+                    } else {
+                        setEnrollments([]);
+                    }
+                } catch (error) {
+                    setEnrollments([]);
+                } finally {
+                    setLoadingEnrollments(false);
+                }
+            };
+
+            // Affiche un message temporaire de succes ou d'erreur.
+            const showMessage = (text, type) => {
+                setMessage({ text, type });
+                setTimeout(() => setMessage({ text: '', type: '' }), 3000);
+            };
+
+            // Verifie le CNIE, recupere l'etudiant, puis ses inscriptions.
+            const validateStudentCnie = async () => {
+                const cnie = cnieInput.trim();
+                if (!cnie) {
+                    showMessage('Veuillez saisir votre CNIE', 'error');
+                    return;
+                }
+                setValidatingCnie(true);
+                setValidatedStudent(null);
+                setEnrollments([]);
+                setSelectedCourseId('');
+                try {
+                    const response = await fetch(`${API_BASE_URL}/students/cnie/${encodeURIComponent(cnie)}`);
+                    if (!response.ok) {
+                        showMessage('Étudiant non trouvé pour ce CNIE', 'error');
+                        return;
+                    }
+                    const student = await response.json();
+                    setValidatedStudent(student);
+                    setCnieInput(student.cnie);
+                    showMessage(`Étudiant trouvé : ${student.firstName} ${student.lastName}`, 'success');
+                    await loadEnrollments(student.cnie);
+                } catch (error) {
+                    showMessage('Erreur de connexion', 'error');
+                } finally {
+                    setValidatingCnie(false);
+                }
+            };
+
+            // Envoie la demande d'inscription pour l'etudiant et le cours choisis.
+            const enrollStudent = async () => {
+                if (!validatedStudent || !selectedCourseId) {
+                    showMessage('Validez votre CNIE puis choisissez un cours', 'error');
+                    return;
+                }
+
+                setLoading(true);
+                try {
+                    const response = await fetch(`${API_BASE_URL}/enrollments`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            studentCnie: validatedStudent.cnie,
+                            courseId: parseInt(selectedCourseId)
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        showMessage('Inscription réussie !', 'success');
+                        setSelectedCourseId('');
+                        await loadEnrollments(validatedStudent.cnie);
+                        loadTotalEnrollments();
+                    } else {
+                        const error = await response.text();
+                        showMessage(error || 'Erreur lors de l\'inscription', 'error');
+                    }
+                } catch (error) {
+                    showMessage('Erreur de connexion', 'error');
+                }
+                setLoading(false);
+            };
+
+            // Demande la suppression d'une inscription si elle est encore autorisee.
+            const deleteEnrollment = async (enrollmentId) => {
+                setLoading(true);
+                try {
+                    const response = await fetch(`${API_BASE_URL}/enrollments/${enrollmentId}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    if (response.ok) {
+                        showMessage('Inscription supprimée', 'success');
+                        if (validatedStudent) {
+                            loadEnrollments(validatedStudent.cnie);
+                        }
+                        loadTotalEnrollments();
+                    } else {
+                        const error = await response.text();
+                        showMessage(error || 'Suppression impossible (délai dépassé)', 'error');
+                    }
+                } catch (error) {
+                    showMessage('Erreur de connexion', 'error');
+                }
+                setLoading(false);
+            };
+
+            // Cree un nouvel etudiant puis recharge la liste.
+            const createStudent = async () => {
+                if (!newStudent.cnie || !newStudent.firstName || !newStudent.lastName || !newStudent.email) {
+                    showMessage('Veuillez remplir tous les champs', 'error');
+                    return;
+                }
+
+                setLoading(true);
+                try {
+                    const response = await fetch(`${API_BASE_URL}/students`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(newStudent)
+                    });
+                    
+                    if (response.ok) {
+                        showMessage('Étudiant créé avec succès !', 'success');
+                        setNewStudent({ cnie: '', firstName: '', lastName: '', email: '' });
+                        loadStudents();
+                    } else {
+                        showMessage('Erreur création étudiant (CNIE ou email existe peut-être déjà)', 'error');
+                    }
+                } catch (error) {
+                    showMessage('Erreur de connexion', 'error');
+                }
+                setLoading(false);
+            };
+
+            // Cree un nouveau cours puis recharge la liste.
+            const createCourse = async () => {
+                if (!newCourse.title || !newCourse.description || !newCourse.credits) {
+                    showMessage('Veuillez remplir tous les champs', 'error');
+                    return;
+                }
+
+                setLoading(true);
+                try {
+                    const response = await fetch(`${API_BASE_URL}/courses`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            title: newCourse.title,
+                            description: newCourse.description,
+                            credits: parseInt(newCourse.credits)
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        showMessage('Cours créé avec succès !', 'success');
+                        setNewCourse({ title: '', description: '', credits: '' });
+                        loadCourses();
+                    } else {
+                        showMessage('Erreur création cours', 'error');
+                    }
+                } catch (error) {
+                    showMessage('Erreur de connexion', 'error');
+                }
+                setLoading(false);
+            };
+
+            // Bouton de navigation reutilisable qui change l'onglet actif.
+            const NavButton = ({ tab, icon, label }) => (
+                <button
+                    onClick={() => setActiveTab(tab)}
+                    className={`flex items-center px-6 py-3 rounded-lg font-semibold transition-all ${
+                        activeTab === tab
+                            ? 'bg-app-accent text-app-bg shadow-lg'
+                            : 'text-app-muted hover:bg-app-surface hover:text-app-text'
+                    }`}
+                >
+                    <i className={`${icon} mr-2`}></i>
+                    {label}
+                </button>
+            );
+
+            return (
+                <div className="min-h-screen">
+                    {/* Header */}
+                    <div className="bg-app-surface/80 backdrop-blur-lg border-b border-app-muted/40">
+                        <div className="container mx-auto px-6 py-4">
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center">
+                                    <i className="fas fa-graduation-cap text-app-accent text-3xl mr-3"></i>
+                                    <h1 className="text-app-text text-2xl font-bold">EduMicro — Système d'Inscription</h1>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Navigation */}
+                    <div className="container mx-auto px-6 mt-8">
+                        <div className="flex flex-wrap gap-4 mb-8">
+                            <NavButton tab="dashboard" icon="fas fa-chart-line" label="Dashboard" />
+                            <NavButton tab="students" icon="fas fa-users" label="Gestion Étudiants" />
+                            <NavButton tab="courses" icon="fas fa-book" label="Gestion Cours" />
+                            <NavButton tab="enroll" icon="fas fa-pen-alt" label="S'inscrire" />
+                        </div>
+
+                        {/* Message */}
+                        {message.text && (
+                            <div className={`mb-6 p-4 rounded-lg border fade-in ${
+                                message.type === 'success'
+                                    ? 'bg-app-accent/20 border-app-accent text-app-accent'
+                                    : 'bg-red-500/20 border-red-400 text-red-300'
+                            }`}>
+                                <i className={`fas ${message.type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'} mr-2`}></i>
+                                {message.text}
+                            </div>
+                        )}
+
+                        {/* Contenu selon l'onglet actif */}
+                        {activeTab === 'dashboard' && (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 fade-in">
+                                <div className="app-card rounded-xl p-6 card-hover">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-app-muted text-sm font-medium">Étudiants</h3>
+                                        <i className="fas fa-users text-app-accent text-2xl"></i>
+                                    </div>
+                                    <p className="text-3xl font-bold text-app-accent">{students.length}</p>
+                                    <p className="text-app-muted text-sm mt-2">inscrits dans le système</p>
+                                </div>
+                                
+                                <div className="app-card rounded-xl p-6 card-hover">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-app-muted text-sm font-medium">Cours</h3>
+                                        <i className="fas fa-book text-app-accent text-2xl"></i>
+                                    </div>
+                                    <p className="text-3xl font-bold text-app-accent">{courses.length}</p>
+                                    <p className="text-app-muted text-sm mt-2">disponibles</p>
+                                </div>
+                                
+                                <div className="app-card rounded-xl p-6 card-hover">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-app-muted text-sm font-medium">Inscriptions</h3>
+                                        <i className="fas fa-clipboard-list text-app-accent text-2xl"></i>
+                                    </div>
+                                    <p className="text-3xl font-bold text-app-accent">{totalEnrollments}</p>
+                                    <p className="text-app-muted text-sm mt-2">dans le système</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'students' && (
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 fade-in">
+                                {/* Liste des étudiants */}
+                                <div className="app-card rounded-xl p-6">
+                                    <h3 className="text-xl font-bold text-app-text mb-4">
+                                        <i className="fas fa-list mr-2 text-app-accent"></i>
+                                        Étudiants existants
+                                    </h3>
+                                    <div className="space-y-3 max-h-96 app-scroll overflow-y-auto">
+                                        {students.map(student => (
+                                            <div key={student.id} className="bg-app-bg rounded-lg p-4 hover:bg-app-surface transition">
+                                                <div className="flex justify-between items-start">
+                                                    <div>
+                                                        <p className="font-bold text-app-text">{student.firstName} {student.lastName}</p>
+                                                        <p className="text-sm text-app-muted">CNIE: {student.cnie}</p>
+                                                        <p className="text-sm text-app-muted">{student.email}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Formulaire ajout étudiant */}
+                                <div className="app-card rounded-xl p-6">
+                                    <h3 className="text-xl font-bold text-app-text mb-4">
+                                        <i className="fas fa-user-plus mr-2 text-app-accent"></i>
+                                        Ajouter un étudiant
+                                    </h3>
+                                    <div className="space-y-4">
+                                        <input
+                                            type="text"
+                                            placeholder="CNIE (ex: CD2387)"
+                                            value={newStudent.cnie}
+                                            onChange={(e) => setNewStudent({...newStudent, cnie: e.target.value})}
+                                            className="app-input"
+                                        />
+                                        <input
+                                            type="text"
+                                            placeholder="Prénom"
+                                            value={newStudent.firstName}
+                                            onChange={(e) => setNewStudent({...newStudent, firstName: e.target.value})}
+                                            className="app-input"
+                                        />
+                                        <input
+                                            type="text"
+                                            placeholder="Nom"
+                                            value={newStudent.lastName}
+                                            onChange={(e) => setNewStudent({...newStudent, lastName: e.target.value})}
+                                            className="app-input"
+                                        />
+                                        <input
+                                            type="email"
+                                            placeholder="Email"
+                                            value={newStudent.email}
+                                            onChange={(e) => setNewStudent({...newStudent, email: e.target.value})}
+                                            className="app-input"
+                                        />
+                                        <button
+                                            onClick={createStudent}
+                                            disabled={loading}
+                                            className="w-full app-btn-primary py-2 rounded-lg hover:shadow-lg transition"
+                                        >
+                                            <i className="fas fa-save mr-2"></i>
+                                            Créer l'étudiant
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'courses' && (
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 fade-in">
+                                {/* Liste des cours */}
+                                <div className="app-card rounded-xl p-6">
+                                    <h3 className="text-xl font-bold text-app-text mb-4">
+                                        <i className="fas fa-list mr-2 text-app-accent"></i>
+                                        Cours disponibles
+                                    </h3>
+                                    <div className="space-y-3 max-h-96 app-scroll overflow-y-auto">
+                                        {courses.map(course => (
+                                            <div key={course.id} className="bg-app-bg rounded-lg p-4 hover:bg-app-surface transition">
+                                                <p className="font-bold text-app-text">{course.title}</p>
+                                                <p className="text-sm text-app-muted">{course.description}</p>
+                                                <p className="text-sm text-app-accent font-medium">Crédits: {course.credits}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Formulaire ajout cours */}
+                                <div className="app-card rounded-xl p-6">
+                                    <h3 className="text-xl font-bold text-app-text mb-4">
+                                        <i className="fas fa-plus-circle mr-2 text-app-accent"></i>
+                                        Ajouter un cours
+                                    </h3>
+                                    <div className="space-y-4">
+                                        <input
+                                            type="text"
+                                            placeholder="Titre du cours"
+                                            value={newCourse.title}
+                                            onChange={(e) => setNewCourse({...newCourse, title: e.target.value})}
+                                            className="app-input"
+                                        />
+                                        <input
+                                            type="text"
+                                            placeholder="Description"
+                                            value={newCourse.description}
+                                            onChange={(e) => setNewCourse({...newCourse, description: e.target.value})}
+                                            className="app-input"
+                                        />
+                                        <input
+                                            type="number"
+                                            placeholder="Crédits"
+                                            value={newCourse.credits}
+                                            onChange={(e) => setNewCourse({...newCourse, credits: e.target.value})}
+                                            className="app-input"
+                                        />
+                                        <button
+                                            onClick={createCourse}
+                                            disabled={loading}
+                                            className="w-full app-btn-primary py-2 rounded-lg hover:shadow-lg transition"
+                                        >
+                                            <i className="fas fa-save mr-2"></i>
+                                            Créer le cours
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'enroll' && (
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 fade-in">
+                                {/* Formulaire d'inscription */}
+                                <div className="app-card rounded-xl p-6">
+                                    <h3 className="text-xl font-bold text-app-text mb-4">
+                                        <i className="fas fa-pen-alt mr-2 text-app-accent"></i>
+                                        Nouvelle inscription
+                                    </h3>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-app-text font-medium mb-2">CNIE</label>
+                                            <div className="flex gap-2">
+                                                <input type="text" placeholder="CNIE (ex: CD2387)" value={cnieInput}
+                                                    onChange={(e) => setCnieInput(e.target.value)}
+                                                    className="app-input flex-1" />
+                                                <button type="button" onClick={validateStudentCnie} disabled={validatingCnie}
+                                                    className="app-btn-primary px-4 py-2 rounded-lg">
+                                                    {validatingCnie ? 'Validation...' : 'Valider'}
+                                                </button>
+                                            </div>
+                                            {validatedStudent && (
+                                                <p className="text-sm text-emerald-400 mt-2">{validatedStudent.firstName} {validatedStudent.lastName}</p>
+                                            )}
+                                        </div>
+                                        {validatedStudent && (
+                                        <div>
+                                            <label className="block text-app-text font-medium mb-2">Cours disponibles</label>
+                                            {availableCourses.length === 0 ? (
+                                                <p className="text-sm text-app-muted py-2">Aucun cours disponible (déjà inscrit à tous les cours)</p>
+                                            ) : (
+                                                <div className="space-y-3 max-h-64 app-scroll overflow-y-auto">
+                                                    {availableCourses.map(course => (
+                                                        <div key={course.id} className={`rounded-lg p-4 border transition hover:bg-app-surface ${
+                                                            selectedCourseId === String(course.id)
+                                                                ? 'bg-app-bg border-app-accent'
+                                                                : 'bg-app-bg border-app-muted/40'
+                                                        }`}>
+                                                            <div className="flex justify-between items-start gap-2">
+                                                                <div>
+                                                                    <p className="font-bold text-app-text">{course.title}</p>
+                                                                    <p className="text-sm text-app-muted">{course.description}</p>
+                                                                    <p className="text-sm text-app-accent font-medium">Crédits: {course.credits}</p>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setSelectedCourseId(String(course.id))}
+                                                                    className={`px-3 py-1 rounded text-sm shrink-0 ${
+                                                                        selectedCourseId === String(course.id)
+                                                                            ? 'app-btn-primary'
+                                                                            : 'bg-app-muted/30 text-app-text hover:bg-app-accent/25'
+                                                                    }`}
+                                                                >
+                                                                    {selectedCourseId === String(course.id) ? 'Sélectionné' : 'Sélectionner'}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            {selectedCourseId && (
+                                                <p className="text-sm text-app-accent mt-2">
+                                                    Cours choisi : {availableCourses.find(c => String(c.id) === selectedCourseId)?.title}
+                                                </p>
+                                            )}
+                                        </div>
+                                        )}
+                                        <button
+                                            onClick={enrollStudent}
+                                            disabled={loading || validatingCnie || loadingEnrollments || !validatedStudent || !selectedCourseId}
+                                            className="w-full app-btn-primary py-3 rounded-lg font-semibold hover:shadow-lg transition"
+                                        >
+                                            <i className="fas fa-check-circle mr-2"></i>
+                                            S'inscrire
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Liste des inscriptions */}
+                                <div className="app-card rounded-xl p-6">
+                                    <h3 className="text-xl font-bold text-app-text mb-4">
+                                        <i className="fas fa-clipboard-list mr-2 text-app-accent"></i>
+                                        Inscriptions de l'étudiant
+                                    </h3>
+                                    {loadingEnrollments ? (
+                                        <div className="text-center py-8">
+                                            <i className="fas fa-spinner fa-spin text-app-accent text-3xl"></i>
+                                        </div>
+                                    ) : !validatedStudent ? (
+                                        <div className="text-center py-8 text-app-muted">
+                                            <i className="fas fa-id-card text-4xl mb-2"></i>
+                                            <p>Validez un CNIE pour voir les inscriptions</p>
+                                        </div>
+                                    ) : enrollments.length === 0 ? (
+                                        <div className="text-center py-8 text-app-muted">
+                                            <i className="fas fa-inbox text-4xl mb-2"></i>
+                                            <p>Aucune inscription</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3 max-h-96 app-scroll overflow-y-auto">
+                                            {enrollments.map(inscription => (
+                                                <div key={inscription.enrollmentId} className={`rounded-lg p-4 transition ${
+                                                    inscription.deletable ? 'bg-app-bg border border-app-accent/50' : 'bg-app-bg border border-app-muted/30'
+                                                }`}>
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            <p className="font-bold text-app-text">{inscription.courseName}</p>
+                                                            <p className="text-sm text-app-muted">Date: {new Date(inscription.date).toLocaleString()}</p>
+                                                            {inscription.deletable ? (
+                                                                <p className="text-sm text-emerald-400 font-medium">
+                                                                    <i className="fas fa-check-circle mr-1"></i>
+                                                                    Supprimable (moins de 24h)
+                                                                </p>
+                                                            ) : (
+                                                                <p className="text-sm text-red-400 font-medium">
+                                                                    <i className="fas fa-clock mr-1"></i>
+                                                                    Non supprimable (plus de 24h)
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                        {inscription.deletable && (
+                                                            <button
+                                                                onClick={() => deleteEnrollment(inscription.enrollmentId)}
+                                                                className="bg-red-500/90 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition text-sm font-semibold"
+                                                            >
+                                                                <i className="fas fa-trash mr-1"></i>
+                                                                Supprimer
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
