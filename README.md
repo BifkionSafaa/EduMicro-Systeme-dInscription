@@ -163,4 +163,4 @@ Toutes les requêtes passent par le gateway : `http://localhost:8080/api`
 
 ## Auteur
 
-**Safaa Bifkion**
+**Safaa Bifkioun**
