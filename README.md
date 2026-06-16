@@ -4,6 +4,8 @@ Application web de gestion des inscriptions universitaires, développée en **ar
 
 Le frontend communique avec un **API Gateway**, qui redirige les requêtes vers les microservices métier. Chaque service possède sa propre base **MySQL**.
 
+La découverte des services est assurée par **Netflix Eureka** : les microservices s'enregistrent dans un annuaire central et communiquent via des **noms logiques** (`student-service`, `course-service`, etc.) résolus par le **LoadBalancer** Spring Cloud.
+
 ## Fonctionnalités
 
 - Gestion des **étudiants** (CRUD)
@@ -16,24 +18,35 @@ Le frontend communique avec un **API Gateway**, qui redirige les requêtes vers 
 ## Architecture
 
 ```
-Frontend (React)
-      ↓
-API Gateway :8080
-      ↓
+Frontend (React CSR) :5500
+         ↓ HTTP / JSON
+API Gateway :8080  (CORS, routage lb://)
+         ↓
+    Eureka Server :8761  (annuaire des services)
+         ↓
 ┌─────────────────┬─────────────────┬──────────────────────┐
 │ student-service │ course-service  │ enrollment-service   │
 │     :8081       │     :8082       │        :8083         │
 │   student_db    │   course_db     │    enrollment_db     │
 └─────────────────┴─────────────────┴──────────────────────┘
-                              ↓ WebClient
-                    appelle student + course
+                              ↓ WebClient (@LoadBalanced)
+                    appelle student + course via Eureka
 ```
+
+| Composant | Rôle |
+|-----------|------|
+| **Eureka Server** | Registre central — chaque service s'y enregistre au démarrage |
+| **Eureka Client** | Présent sur gateway + les 3 microservices |
+| **LoadBalancer** | Traduit `lb://student-service` ou `http://student-service` en adresse réelle |
+| **API Gateway** | Point d'entrée unique du front (`lb://` dans les routes) |
+| **WebClient** | Communication interne enrollment → student / course |
 
 ## Technologies
 
 | Couche | Technologies |
 |--------|--------------|
 | Backend | Java 17, Spring Boot, Spring Cloud Gateway, Spring Data JPA, Hibernate, WebClient |
+| Service discovery | Netflix Eureka, Spring Cloud LoadBalancer |
 | Frontend | React 18, JavaScript, Tailwind CSS, Fetch API (CSR) |
 | Base de données | MySQL |
 | Build | Maven |
@@ -42,6 +55,7 @@ API Gateway :8080
 
 ```
 projet-microservices/
+├── eureka-server/        # Annuaire des services (port 8761)
 ├── api-gateway/          # Point d'entrée unique (port 8080)
 ├── student-service/      # Gestion des étudiants (port 8081)
 ├── course-service/       # Gestion des cours (port 8082)
@@ -82,7 +96,16 @@ Démarrer les services **dans cet ordre** :
 
 Vérifier que MySQL écoute sur le port `3307`.
 
-### 2. Microservices
+### 2. Eureka Server
+
+```bash
+cd eureka-server
+./mvnw spring-boot:run
+```
+
+Dashboard Eureka : `http://localhost:8761`
+
+### 3. Microservices
 
 Dans chaque dossier de service :
 
@@ -106,17 +129,21 @@ cd api-gateway
 
 Sous Windows, utiliser `mvnw.cmd` à la place de `./mvnw`.
 
-### 3. Frontend
+> Vérifier sur le dashboard Eureka que les 4 services sont enregistrés avant de tester le front.
+
+### 4. Frontend
 
 Ouvrir `frontend/index.html` avec Live Server ou un serveur local.
 
 - Frontend : `http://localhost:5500` (ou port affiché par Live Server)
 - API Gateway : `http://localhost:8080/api`
+- Eureka : `http://localhost:8761`
 
 ## Ports
 
 | Service | Port |
 |---------|------|
+| Eureka Server | 8761 |
 | API Gateway | 8080 |
 | student-service | 8081 |
 | course-service | 8082 |
